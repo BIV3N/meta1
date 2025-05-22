@@ -144,3 +144,44 @@ app.get('/objects', (req, res) => {
     }
   });
 });
+
+// --- МУЛЬТИПЛЕЄР: синхронізація гравців через WebSocket ---
+const players = {};
+
+wsServer.on('connection', function connection(ws) {
+  let thisId = null;
+  ws.on('message', function incoming(message) {
+    let data;
+    try { data = JSON.parse(message); } catch { data = null; }
+    if (data && data.type === 'player') {
+      thisId = data.id;
+      players[thisId] = data.pos;
+      // Розсилаємо всім актуальні позиції
+      const payload = JSON.stringify({ type: 'players', players });
+      wsServer.clients.forEach(function each(client) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(payload);
+        }
+      });
+    } else if (typeof message === 'string') {
+      // старий чат
+      wsServer.clients.forEach(function each(client) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message.toString());
+        }
+      });
+    }
+  });
+  ws.on('close', function() {
+    if (thisId && players[thisId]) {
+      delete players[thisId];
+      // Оновити всім список гравців
+      const payload = JSON.stringify({ type: 'players', players });
+      wsServer.clients.forEach(function each(client) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(payload);
+        }
+      });
+    }
+  });
+});

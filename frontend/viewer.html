@@ -660,6 +660,65 @@
       }
     }
     window.addEventListener('DOMContentLoaded', initChat);
+
+    // --- МУЛЬТИПЛЕЄР: синхронізація гравців через WebSocket ---
+    let playerId = Math.random().toString(36).substr(2, 9); // простий унікальний id
+    let players = {}; // {id: {x, y, z}}
+    let playerMeshMap = {}; // {id: mesh}
+
+    function sendPlayerPosition() {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({
+          type: 'player',
+          id: playerId,
+          pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z }
+        }));
+      }
+    }
+
+    function updateOtherPlayers() {
+      for (const id in players) {
+        if (id === playerId) continue;
+        let mesh = playerMeshMap[id];
+        if (!mesh) {
+          // Додаємо просту модельку (кулю) для іншого гравця
+          const geometry = new THREE.SphereGeometry(2, 16, 16);
+          const material = new THREE.MeshStandardMaterial({ color: 0x1976d2 });
+          mesh = new THREE.Mesh(geometry, material);
+          scene.add(mesh);
+          playerMeshMap[id] = mesh;
+        }
+        mesh.position.set(players[id].x, players[id].y, players[id].z);
+      }
+      // Видалити модельки, яких вже немає
+      for (const id in playerMeshMap) {
+        if (!players[id]) {
+          scene.remove(playerMeshMap[id]);
+          delete playerMeshMap[id];
+        }
+      }
+    }
+
+    // Додаємо відправку позиції раз на 100мс
+    setInterval(sendPlayerPosition, 100);
+
+    // ...у ws.onmessage:
+    ws.onmessage = (msg) => {
+      try {
+        const data = JSON.parse(msg.data);
+        if (data.type === 'players') {
+          players = data.players;
+          updateOtherPlayers();
+        } else if (typeof data === 'string') {
+          chatMessages.innerHTML += `<div>${data}</div>`;
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+      } catch (e) {
+        // старий формат чату
+        chatMessages.innerHTML += `<div>${msg.data}</div>`;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    };
   </script>
 </body>
 </html>
