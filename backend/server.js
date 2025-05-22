@@ -163,8 +163,16 @@ wsServer.on('connection', function connection(ws) {
           client.send(payload);
         }
       });
+    } else if (data && data.type === 'chat') {
+      // Новий чат: розсилаємо з іменем
+      const payload = JSON.stringify({ type: 'chat', name: data.name, text: data.text });
+      wsServer.clients.forEach(function each(client) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(payload);
+        }
+      });
     } else if (typeof message === 'string') {
-      // старий чат
+      // старий чат (fallback)
       wsServer.clients.forEach(function each(client) {
         if (client.readyState === WebSocket.OPEN) {
           client.send(message.toString());

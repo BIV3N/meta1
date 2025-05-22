@@ -630,21 +630,32 @@
       window.addEventListener('click', onClick);
     })();
 
-    // --- Чат через WebSocket ---
+    // --- Чат через WebSocket (працюючий, з іменем) ---
     let ws;
+    let playerName = localStorage.getItem('playerName') || ('Гість_' + Math.floor(Math.random()*1000));
     function initChat() {
       const chatMessages = document.getElementById('chat-messages');
       const chatInput = document.getElementById('chat-input');
       const chatSend = document.getElementById('chat-send');
       // Підключення до WebSocket-сервера
-      ws = new WebSocket('ws://' + window.location.hostname + ':3001');
+      ws = new WebSocket('ws://' + window.location.hostname + (window.location.port ? ':'+window.location.port : '') );
       ws.onopen = () => {
         chatMessages.innerHTML += '<div style="color:#888">Підключено до чату</div>';
       };
       ws.onmessage = (msg) => {
-        const data = msg.data;
-        chatMessages.innerHTML += `<div>${data}</div>`;
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        try {
+          const data = JSON.parse(msg.data);
+          if (data.type === 'players') {
+            players = data.players;
+            updateOtherPlayers();
+          } else if (data.type === 'chat') {
+            chatMessages.innerHTML += `<div><b>${data.name}:</b> ${data.text}</div>`;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+          }
+        } catch (e) {
+          chatMessages.innerHTML += `<div>${msg.data}</div>`;
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
       };
       ws.onclose = () => {
         chatMessages.innerHTML += '<div style="color:#888">Зʼєднання з чатом втрачено</div>';
@@ -654,7 +665,7 @@
       function sendMsg() {
         const text = chatInput.value.trim();
         if (text && ws && ws.readyState === 1) {
-          ws.send(text);
+          ws.send(JSON.stringify({ type: 'chat', name: playerName, text }));
           chatInput.value = '';
         }
       }
@@ -678,12 +689,13 @@
 
     function updateOtherPlayers() {
       for (const id in players) {
-        if (id === playerId) continue;
         let mesh = playerMeshMap[id];
         if (!mesh) {
-          // Додаємо просту модельку (кулю) для іншого гравця
+          // Додаємо просту модельку (кулю) для кожного гравця
           const geometry = new THREE.SphereGeometry(2, 16, 16);
-          const material = new THREE.MeshStandardMaterial({ color: 0x1976d2 });
+          // Свій гравець — зелений, інші — сині
+          const color = (id === playerId) ? 0x43a047 : 0x1976d2;
+          const material = new THREE.MeshStandardMaterial({ color });
           mesh = new THREE.Mesh(geometry, material);
           scene.add(mesh);
           playerMeshMap[id] = mesh;
