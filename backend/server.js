@@ -1,6 +1,7 @@
 const http = require('http');
 const express = require('express');
 const app = express();
+const bodyParser = require('body-parser');
 
 // --- Додаємо WebSocket для чату ---
 const WebSocket = require('ws');
