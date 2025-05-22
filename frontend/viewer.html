@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Viewer</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+    #description {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      display: none;
+    }
+    #crosshair {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 12px;
+      height: 12px;
+      margin-left: -6px;
+      margin-top: -6px;
+      pointer-events: none;
+      z-index: 10;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.2);
+      border: 2px solid #fff;
+      box-sizing: border-box;
+    }
+    /* Chat styles */
+    #chat-container {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      width: 320px;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: 8px;
+      box-shadow: 0 2px 8px #0002;
+      padding: 10px;
+    }
+    #chat-messages {
+      height: 160px;
+      overflow-y: auto;
+      font-size: 15px;
+      margin-bottom: 8px;
+    }
+    #chat-input {
+      width: 75%;
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid #bbb;
+    }
+    #chat-send {
+      width: 20%;
+      padding: 6px 0;
+      margin-left: 4px;
+      border-radius: 4px;
+      background: #1976d2;
+      color: #fff;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="description"></div>
+  <div id="crosshair"></div>
+  <div id="chat-container">
+    <div id="chat-messages"></div>
+    <input id="chat-input" type="text" maxlength="200" placeholder="Введіть повідомлення...">
+    <button id="chat-send">Надіслати</button>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three/examples/jsm/libs/fontloader.js"></script>
+  <script>
+    // Створення сцени
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xeeeeee);
+
+    // Розміри кімнати (збільшено)
+    const roomWidth = 100;
+    const roomHeight = 50;
+    const roomDepth = 100;
+
+    // ПІДЛОГА: світло-бежевий колір, без текстури
+    const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xf7ecd0 }); // пастельний бежевий
+    const floorGeometry = new THREE.PlaneGeometry(roomWidth, roomDepth, 1, 1);
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -roomHeight / 2;
+    scene.add(floor);
+
+    // СТІНИ: ще більш приємний пастельний колір (наприклад, світло-лавандовий)
+    const wallColor = 0xe8eaff; // дуже ніжний лавандовий
+    const wallMaterial = new THREE.MeshStandardMaterial({ color: wallColor, side: THREE.DoubleSide });
+    // Задня стіна
+    const backWall = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomHeight), wallMaterial);
+    backWall.position.z = -roomDepth / 2;
+    backWall.position.y = 0;
+    scene.add(backWall);
+    // Передня стіна
+    const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomHeight), wallMaterial);
+    frontWall.position.z = roomDepth / 2;
+    frontWall.position.y = 0;
+    frontWall.rotation.y = Math.PI;
+    scene.add(frontWall);
+    // Ліва стіна
+    const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(roomDepth, roomHeight), wallMaterial);
+    leftWall.position.x = -roomWidth / 2;
+    leftWall.position.y = 0;
+    leftWall.rotation.y = Math.PI / 2;
+    scene.add(leftWall);
+    // Права стіна (з проходом для дверей)
+    (function() {
+      const doorWidth = 16;
+      const wallPartWidth = (roomDepth - doorWidth) / 2;
+      const wallHeight = roomHeight;
+      // Ліва вертикальна частина
+      const rightWallLeftGeo = new THREE.PlaneGeometry(wallPartWidth, wallHeight);
+      const rightWallLeft = new THREE.Mesh(rightWallLeftGeo, wallMaterial);
+      rightWallLeft.position.x = roomWidth/2;
+      rightWallLeft.position.y = 0;
+      rightWallLeft.position.z = -((doorWidth/2) + wallPartWidth/2);
+      rightWallLeft.rotation.y = -Math.PI/2;
+      scene.add(rightWallLeft);
+      // Середня частина (прохід) - не додаємо
+      // Права вертикальна частина
+      const rightWallRightGeo = new THREE.PlaneGeometry(wallPartWidth, wallHeight);
+      const rightWallRight = new THREE.Mesh(rightWallRightGeo, wallMaterial);
+      rightWallRight.position.x = roomWidth/2;
+      rightWallRight.position.y = 0;
+      rightWallRight.position.z = (doorWidth/2) + wallPartWidth/2;
+      rightWallRight.rotation.y = -Math.PI/2;
+      scene.add(rightWallRight);
+    })();
+
+    // --- Прохід між кімнатами: суцільна підлога між кімнатами ---
+    (function() {
+      const doorWidth = 16;
+      const passageDepth = 8;
+      // Підлога проходу (одна суцільна плита між кімнатами)
+      const totalPassage = (roomWidth/2) + passageDepth + (roomWidth/2);
+      const floorGeo = new THREE.PlaneGeometry(passageDepth, doorWidth);
+      // Підлога між кімнатами
+      const floorMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(passageDepth * 2 + 0.1, doorWidth),
+        new THREE.MeshStandardMaterial({ color: 0xf7ecd0 })
+      );
+      floorMesh.rotation.x = -Math.PI/2;
+      floorMesh.position.set((roomWidth/2) + passageDepth/2 + 10, -roomHeight/2, 0);
+      scene.add(floorMesh);
+    })();
+
+    // Завантаження обраних об'єктів з localStorage
+    let selectedObjects = [];
+    try {
+      selectedObjects = JSON.parse(localStorage.getItem('selectedObjects')) || [];
+    } catch (e) {}
+    console.log('Loaded objects from localStorage:', selectedObjects);
+
+    // Масив для збереження mesh-об'єктів для опису
+    const loadedObjects = [];
+
+    // Додаємо всі вибрані об'єкти у кімнату
+    if (selectedObjects.length > 0) {
+      selectedObjects.forEach((obj, i) => {
+        const angle = (i / selectedObjects.length) * Math.PI * 2;
+        const radius = 20;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        const y = -roomHeight / 2 + 3;
+
+        // Пілар (циліндр)
+        const pillarHeight = 6;
+        const pillarGeometry = new THREE.CylinderGeometry(2, 2, pillarHeight, 32);
+        const pillarMaterial = new THREE.MeshStandardMaterial({ color: 0xf0f0f0 });
+        const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+        pillar.position.set(x, y + pillarHeight / 2 + 6, z);
+        scene.add(pillar);
+
+        // Додаємо об'єкт на пілар трохи вище
+        if (obj.url && obj.url.match(/\.(gltf|glb)$/i)) {
+          const loader = new THREE.GLTFLoader();
+          loader.load(obj.url, (gltf) => {
+            const mesh = gltf.scene;
+            mesh.position.set(x, y + pillarHeight + 10, z); // вище пілара на 6 одиниць більше
+            if (obj.url && obj.url.match(/GTR\+35\.glb$/i)) {
+              mesh.scale.set(1.2, 1.2, 1.2); // Дуже великий масштаб для машини
+            } else if (obj.url && obj.url.match(/Eye\.glb$/i)) {
+              mesh.scale.set(24, 24, 24); // Дуже великий масштаб для ока (20 разів більше)
+              console.log('Eye object loaded:', obj);
+            } else if (obj.url && obj.url.match(/Fox\.glb$/i)) {
+              mesh.scale.set(0.03, 0.03, 0.03); // Стандартний масштаб для лисиці
+            } else {
+              mesh.scale.set(0.03, 0.03, 0.03); // Стандартний масштаб для інших
+            }
+
+            // Додаємо опис та збільшуємо область взаємодії
+            mesh.traverse((child) => {
+              if (child.isMesh) {
+                child.userData = {
+                  description: obj.description || 'Об\'єкт без опису',
+                  type: obj.type || 'Невідомий тип',
+                };
+                child.geometry.computeBoundingBox();
+                const boundingBox = child.geometry.boundingBox;
+                const interactionScale = 6; // Дуже велика область взаємодії
+                boundingBox.expandByScalar(interactionScale);
+              }
+            });
+
+            scene.add(mesh);
+            loadedObjects.push(mesh);
+
+            // Додаємо червоний кубик-підказку біля кожного об'єкта
+            const cubeSize = 2;
+            const cubeOffset = 5; // Відстань від центру об'єкта
+            const infoCubeGeometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            const infoCubeMaterial = new THREE.MeshStandardMaterial({ color: 0xff2222 });
+            const infoCube = new THREE.Mesh(infoCubeGeometry, infoCubeMaterial);
+            infoCube.position.set(x + cubeOffset, y + pillarHeight + 10, z);
+            infoCube.userData = {
+              description: obj.description || 'Обʼєкт без опису',
+              type: obj.type || 'Невідомий тип',
+            };
+            scene.add(infoCube);
+            loadedObjects.push(infoCube);
+          }, undefined, (err) => {
+            console.error(`Помилка завантаження моделі ${obj.name}:`, err);
+          });
+        } else {
+          console.warn(`Пропущено об\'єкт ${obj.name} через невірний URL:`, obj.url);
+        }
+      });
+    } else {
+      console.warn('Жоден об\'єкт не було обрано для завантаження.');
+    }
+
+    // Додаємо вікна у стінах
+    function addWindow(x, y, z, rotY = 0, w = 16, h = 10) {
+      const windowGeo = new THREE.PlaneGeometry(w, h);
+      const windowMat = new THREE.MeshBasicMaterial({ color: 0xbfdfff, transparent: true, opacity: 0.35 });
+      const win = new THREE.Mesh(windowGeo, windowMat);
+      win.position.set(x, y, z);
+      win.rotation.y = rotY;
+      scene.add(win);
+    }
+    // Вікно у задній стіні
+    addWindow(0, 0, -roomDepth/2 + 0.1);
+    // Вікно у передній стіні
+    addWindow(0, 0, roomDepth/2 - 0.1, Math.PI);
+    // Вікно у лівій стіні
+    addWindow(-roomWidth/2 + 0.1, 0, 0, Math.PI/2);
+    // Вікно у правій стіні (видалено, бо там табличка)
+    // addWindow(roomWidth/2 - 0.1, 0, 0, -Math.PI/2);
+
+    // --- Переносимо табличку з інформацією на стіну другої кімнати ---
+    function addInfoBoard() {
+      const boardW = 32, boardH = 14;
+      const boardGeo = new THREE.PlaneGeometry(boardW, boardH);
+      const boardMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 });
+      const offsetX = 120;
+      const board = new THREE.Mesh(boardGeo, boardMat);
+      board.position.set(offsetX + roomWidth/2 - 0.2, 8, 0); // на правій стіні другої кімнати
+      board.rotation.y = -Math.PI/2;
+      scene.add(board);
+      // Додаємо текст (canvas texture)
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024; canvas.height = 448;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = '#222';
+      ctx.font = 'bold 54px Segoe UI, Arial';
+      ctx.fillText('Проєкт "Metaverse Room"', 40, 90);
+      ctx.font = '36px Segoe UI, Arial';
+      ctx.fillText('Автор: Іван Біленко', 40, 170);
+      ctx.fillText('Чи це метапростір: Так', 40, 230);
+      ctx.fillText('Бібліотеки: three.js, express, sqlite3', 40, 290);
+      ctx.fillText('Мова: JavaScript (Node.js, frontend)', 40, 350);
+      ctx.font = 'italic 32px Segoe UI, Arial';
+      ctx.fillText('2025', 40, 410);
+      const tex = new THREE.CanvasTexture(canvas);
+      const textMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+      const textMesh = new THREE.Mesh(boardGeo, textMat);
+      textMesh.position.copy(board.position);
+      textMesh.rotation.copy(board.rotation);
+      scene.add(textMesh);
+    }
+    addInfoBoard();
+
+    // --- Додаємо фото ДПУ з локального файлу на лівій стіні другої кімнати ---
+    (function() {
+      const offsetX = 120;
+      const frameW = 28, frameH = 16;
+      // Фото (текстура локально)
+      const photoGeo = new THREE.PlaneGeometry(frameW, frameH);
+      const loader = new THREE.TextureLoader();
+      loader.load(
+        'models/183uacover06.jpg',
+        function(tex) {
+          console.log('Фото ДПУ завантажено локально');
+          const photoMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+          const photo = new THREE.Mesh(photoGeo, photoMat);
+          photo.position.set(offsetX, 8, -roomDepth/2 + 1.5);
+          photo.rotation.y = 0;
+          photo.position.z += 0.1;
+          scene.add(photo);
+        },
+        undefined,
+        function(err) {
+          console.error('Помилка завантаження фото ДПУ локально:', err);
+        }
+      );
+      // Кнопка-посилання на стіні (3D кнопка)
+      const buttonW = 12, buttonH = 3;
+      const buttonGeo = new THREE.PlaneGeometry(buttonW, buttonH);
+      const buttonCanvas = document.createElement('canvas');
+      buttonCanvas.width = 512; buttonCanvas.height = 128;
+      const bctx = buttonCanvas.getContext('2d');
+      bctx.fillStyle = '#fff';
+      bctx.fillRect(0,0,512,128);
+      bctx.fillStyle = '#1a237e';
+      bctx.font = 'bold 48px Segoe UI, Arial';
+      bctx.textAlign = 'center';
+      bctx.textBaseline = 'middle';
+      bctx.fillText('Перейти на сайт ДПУ', 256, 64);
+      const buttonTex = new THREE.CanvasTexture(buttonCanvas);
+      const buttonMat = new THREE.MeshBasicMaterial({ map: buttonTex });
+      const button = new THREE.Mesh(buttonGeo, buttonMat);
+      button.position.set(offsetX, -2, -roomDepth/2 + 1.5); // нижче фото (було 2, стало -2)
+      button.rotation.y = 0;
+      button.cursor = 'pointer';
+      scene.add(button);
+      // Взаємодія: клік по кнопці відкриває сайт
+      const raycaster = new THREE.Raycaster();
+      const mouse = new THREE.Vector2();
+      function onClick(event) {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObject(button);
+        if (intersects.length > 0) {
+          window.open('https://dpu.edu.ua/', '_blank');
+        }
+      }
+      window.addEventListener('click', onClick);
+    })();
+
+    // --- Додаємо другу кімнату поряд з основною ---
+    (function addSecondRoom() {
+      const offsetX = 120; // Відстань між кімнатами
+      // Підлога
+      const floor2 = new THREE.Mesh(
+        new THREE.PlaneGeometry(roomWidth, roomDepth, 1, 1),
+        new THREE.MeshStandardMaterial({ color: 0xe0e0e0 })
+      );
+      floor2.rotation.x = -Math.PI / 2;
+      floor2.position.set(offsetX, -roomHeight / 2, 0);
+      scene.add(floor2);
+      // Стіни
+      const wallMat2 = new THREE.MeshStandardMaterial({ color: 0xd0eaff, side: THREE.DoubleSide });
+      const backWall2 = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomHeight), wallMat2);
+      backWall2.position.set(offsetX, 0, -roomDepth / 2);
+      scene.add(backWall2);
+      const frontWall2 = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomHeight), wallMat2);
+      frontWall2.position.set(offsetX, 0, roomDepth / 2);
+      frontWall2.rotation.y = Math.PI;
+      scene.add(frontWall2);
+    })();
+
+    // --- Друга кімната: задня стіна з проходом (3 вертикальні частини) ---
+    (function() {
+      const offsetX = 120;
+      const doorWidth = 16;
+      const wallPartWidth = (roomWidth - doorWidth) / 2;
+      const wallHeight = roomHeight;
+      const wallMat2 = new THREE.MeshStandardMaterial({ color: 0xd0eaff, side: THREE.DoubleSide });
+      // Ліва вертикальна частина
+      const backWall2LeftGeo = new THREE.PlaneGeometry(wallPartWidth, wallHeight);
+      const backWall2Left = new THREE.Mesh(backWall2LeftGeo, wallMat2);
+      backWall2Left.position.set(offsetX - (roomWidth/2) + wallPartWidth/2, 0, -roomDepth / 2);
+      scene.add(backWall2Left);
+      // Середня частина (прохід) - не додаємо
+      // Права вертикальна частина
+      const backWall2RightGeo = new THREE.PlaneGeometry(wallPartWidth, wallHeight);
+      const backWall2Right = new THREE.Mesh(backWall2RightGeo, wallMat2);
+      backWall2Right.position.set(offsetX + (roomWidth/2) - wallPartWidth/2, 0, -roomDepth / 2);
+      scene.add(backWall2Right);
+    })();
+
+    // --- Друга кімната: права стіна (суцільна, без проходу) ---
+    (function() {
+      const offsetX = 120;
+      const wallMat2 = new THREE.MeshStandardMaterial({ color: 0xd0eaff, side: THREE.DoubleSide });
+      const rightWall2 = new THREE.Mesh(new THREE.PlaneGeometry(roomDepth, roomHeight), wallMat2);
+      rightWall2.position.x = offsetX + roomWidth/2;
+      rightWall2.position.y = 0;
+      rightWall2.position.z = 0;
+      rightWall2.rotation.y = -Math.PI/2;
+      scene.add(rightWall2);
+    })();
+
+    // --- Друга кімната: ліва стіна з проходом (3 вертикальні частини) ---
+    (function() {
+      const offsetX = 120;
+      const doorWidth = 16;
+      const wallPartWidth = (roomDepth - doorWidth) / 2;
+      const wallHeight = roomHeight;
+      const wallMat2 = new THREE.MeshStandardMaterial({ color: 0xd0eaff, side: THREE.DoubleSide });
+      // Ліва вертикальна частина
+      const leftWall2LeftGeo = new THREE.PlaneGeometry(wallPartWidth, wallHeight);
+      const leftWall2Left = new THREE.Mesh(leftWall2LeftGeo, wallMat2);
+      leftWall2Left.position.x = offsetX - roomWidth/2;
+      leftWall2Left.position.y = 0;
+      leftWall2Left.position.z = -((doorWidth/2) + wallPartWidth/2);
+      leftWall2Left.rotation.y = Math.PI/2;
+      scene.add(leftWall2Left);
+      // Середня частина (прохід) - не додаємо
+      // Права вертикальна частина
+      const leftWall2RightGeo = new THREE.PlaneGeometry(wallPartWidth, wallHeight);
+      const leftWall2Right = new THREE.Mesh(leftWall2RightGeo, wallMat2);
+      leftWall2Right.position.x = offsetX - roomWidth/2;
+      leftWall2Right.position.y = 0;
+      leftWall2Right.position.z = (doorWidth/2) + wallPartWidth/2;
+      leftWall2Right.rotation.y = Math.PI/2;
+      scene.add(leftWall2Right);
+    })();
+
+    // --- Додаємо освітлення у другій кімнаті ---
+    (function addSecondRoomLight() {
+      const offsetX = 120;
+      const light2 = new THREE.PointLight(0xfff7cc, 1.2, 200);
+      light2.position.set(offsetX, 30, 0);
+      scene.add(light2);
+    })();
+
+    // Камера
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 0, 8);
+    let cameraDirection = 0; // radians
+    let pitch = 0; // вертикальний кут
+
+    // --- Освітлення ---
+    // Додаємо просте світло
+    const light = new THREE.PointLight(0xffffff, 1.1, 200);
+    light.position.set(0, 30, 0);
+    scene.add(light);
+
+    // Рендерер
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Опис
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const descriptionBox = document.getElementById('description');
+
+    function onMouseMove(event) {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const objectsToCheck = [...loadedObjects].filter(Boolean);
+      const intersects = raycaster.intersectObjects(objectsToCheck, true);
+      if (intersects.length > 0) {
+        descriptionBox.style.display = 'block';
+        descriptionBox.textContent = intersects[0].object.userData.description;
+      } else {
+        descriptionBox.style.display = 'none';
+      }
+    }
+    window.addEventListener('mousemove', onMouseMove);
+
+    // Управління камерою (WASD/стрілки)
+    const keys = {};
+    window.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
+    window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+
+    // --- Pointer Lock Controls для огляду мишкою ---
+    let isPointerLocked = false;
+    document.body.addEventListener('click', () => {
+      renderer.domElement.requestPointerLock();
+    });
+    document.addEventListener('pointerlockchange', () => {
+      isPointerLocked = document.pointerLockElement === renderer.domElement;
+    });
+    document.addEventListener('mousemove', (event) => {
+      if (isPointerLocked) {
+        cameraDirection -= event.movementX * 0.002;
+        pitch += event.movementY * 0.002; // БЕЗ інверсії
+        // Обмеження вертикального кута
+        pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
+      }
+    });
+
+    function updateCamera() {
+      const speed = 0.4; // Збільшена швидкість переміщення
+      // Вектор напрямку (y не змінюється)
+      const dx = Math.sin(cameraDirection);
+      const dz = Math.cos(cameraDirection);
+      // Вперед/назад (W/S або стрілки)
+      if (keys['w'] || keys['arrowup']) {
+        camera.position.x -= dx * speed;
+        camera.position.z -= dz * speed;
+      }
+      if (keys['s'] || keys['arrowdown']) {
+        camera.position.x += dx * speed;
+        camera.position.z += dz * speed;
+      }
+      // Вліво/вправо (A/D або стрілки)
+      if (keys['a'] || keys['arrowleft']) {
+        camera.position.x -= Math.cos(cameraDirection) * speed;
+        camera.position.z += Math.sin(cameraDirection) * speed;
+      }
+      if (keys['d'] || keys['arrowright']) {
+        camera.position.x += Math.cos(cameraDirection) * speed;
+        camera.position.z -= Math.sin(cameraDirection) * speed;
+      }
+      // Огляд мишкою (y не змінюється)
+      const lookAtX = camera.position.x - Math.sin(cameraDirection) * Math.cos(pitch);
+      const lookAtY = camera.position.y - Math.sin(pitch);
+      const lookAtZ = camera.position.z - Math.cos(cameraDirection) * Math.cos(pitch);
+      camera.lookAt(lookAtX, lookAtY, lookAtZ);
+    }
+
+    // Анімація
+    function animate() {
+      requestAnimationFrame(animate);
+      loadedObjects.forEach(obj => { if (obj && obj.rotation) obj.rotation.y += 0.01; });
+      updateCamera();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // --- Додаємо фото Oracle і Cisco на стіні навпроти (передній стіні другої кімнати) ---
+    (function() {
+      const offsetX = 120;
+      const frameW = 12, frameH = 12; // квадратні рамки для логотипів
+      const spacing = 2; // відступ між фото
+      const baseY = 8; // по центру стіни
+      const baseZ = roomDepth/2 - 1.5 - 0.2; // передня стіна другої кімнати
+      const loader = new THREE.TextureLoader();
+      // Oracle
+      loader.load(
+        'models/oracle.png',
+        function(tex) {
+          const photoMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+          const photoGeo = new THREE.PlaneGeometry(frameW, frameH);
+          const photo = new THREE.Mesh(photoGeo, photoMat);
+          photo.position.set(offsetX - frameW/2 - spacing/2, baseY, baseZ);
+          photo.rotation.y = Math.PI; // Повертаємо до кімнати
+          scene.add(photo);
+        },
+        undefined,
+        function(err) { console.error('Помилка завантаження oracle.png:', err); }
+      );
+      // Cisco
+      loader.load(
+        'models/cisco.png',
+        function(tex) {
+          const photoMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+          const photoGeo = new THREE.PlaneGeometry(frameW, frameH);
+          const photo = new THREE.Mesh(photoGeo, photoMat);
+          photo.position.set(offsetX + frameW/2 + spacing/2, baseY, baseZ);
+          photo.rotation.y = Math.PI;
+          scene.add(photo);
+        },
+        undefined,
+        function(err) { console.error('Помилка завантаження cisco.png:', err); }
+      );
+      // Кнопки під фото
+      const buttonW = 10, buttonH = 2.5;
+      const buttonYOffset = -frameH/2 - 2;
+      // Oracle button
+      const oracleBtnCanvas = document.createElement('canvas');
+      oracleBtnCanvas.width = 400; oracleBtnCanvas.height = 100;
+      const octx = oracleBtnCanvas.getContext('2d');
+      octx.fillStyle = '#fff'; octx.fillRect(0,0,400,100);
+      octx.fillStyle = '#b71c1c';
+      octx.font = 'bold 36px Segoe UI, Arial';
+      octx.textAlign = 'center'; octx.textBaseline = 'middle';
+      octx.fillText('Oracle Academy', 200, 50);
+      const oracleBtnTex = new THREE.CanvasTexture(oracleBtnCanvas);
+      const oracleBtnMat = new THREE.MeshBasicMaterial({ map: oracleBtnTex });
+      const oracleBtnGeo = new THREE.PlaneGeometry(buttonW, buttonH);
+      const oracleBtn = new THREE.Mesh(oracleBtnGeo, oracleBtnMat);
+      oracleBtn.position.set(offsetX - frameW/2 - spacing/2, baseY + buttonYOffset, baseZ);
+      oracleBtn.rotation.y = Math.PI;
+      oracleBtn.cursor = 'pointer';
+      scene.add(oracleBtn);
+      // Cisco button
+      const ciscoBtnCanvas = document.createElement('canvas');
+      ciscoBtnCanvas.width = 400; ciscoBtnCanvas.height = 100;
+      const cctx = ciscoBtnCanvas.getContext('2d');
+      cctx.fillStyle = '#fff'; cctx.fillRect(0,0,400,100);
+      cctx.fillStyle = '#1565c0';
+      cctx.font = 'bold 36px Segoe UI, Arial';
+      cctx.textAlign = 'center'; cctx.textBaseline = 'middle';
+      cctx.fillText('Cisco Networking', 200, 50);
+      const ciscoBtnTex = new THREE.CanvasTexture(ciscoBtnCanvas);
+      const ciscoBtnMat = new THREE.MeshBasicMaterial({ map: ciscoBtnTex });
+      const ciscoBtnGeo = new THREE.PlaneGeometry(buttonW, buttonH);
+      const ciscoBtn = new THREE.Mesh(ciscoBtnGeo, ciscoBtnMat);
+      ciscoBtn.position.set(offsetX + frameW/2 + spacing/2, baseY + buttonYOffset, baseZ);
+      ciscoBtn.rotation.y = Math.PI;
+      ciscoBtn.cursor = 'pointer';
+      scene.add(ciscoBtn);
+      // Взаємодія: клік по кнопках відкриває відповідні сайти
+      const raycaster = new THREE.Raycaster();
+      const mouse = new THREE.Vector2();
+      function onClick(event) {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects([oracleBtn, ciscoBtn]);
+        if (intersects.length > 0) {
+          if (intersects[0].object === oracleBtn) {
+            window.open('https://academy.oracle.com/', '_blank');
+          } else if (intersects[0].object === ciscoBtn) {
+            window.open('https://www.netacad.com/', '_blank');
+          }
+        }
+      }
+      window.addEventListener('click', onClick);
+    })();
+
+    // --- Чат через WebSocket ---
+    let ws;
+    function initChat() {
+      const chatMessages = document.getElementById('chat-messages');
+      const chatInput = document.getElementById('chat-input');
+      const chatSend = document.getElementById('chat-send');
+      // Підключення до WebSocket-сервера
+      ws = new WebSocket('ws://' + window.location.hostname + ':3001');
+      ws.onopen = () => {
+        chatMessages.innerHTML += '<div style="color:#888">Підключено до чату</div>';
+      };
+      ws.onmessage = (msg) => {
+        const data = msg.data;
+        chatMessages.innerHTML += `<div>${data}</div>`;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      };
+      ws.onclose = () => {
+        chatMessages.innerHTML += '<div style="color:#888">Зʼєднання з чатом втрачено</div>';
+      };
+      chatSend.onclick = sendMsg;
+      chatInput.onkeydown = (e) => { if (e.key === 'Enter') sendMsg(); };
+      function sendMsg() {
+        const text = chatInput.value.trim();
+        if (text && ws && ws.readyState === 1) {
+          ws.send(text);
+          chatInput.value = '';
+        }
+      }
+    }
+    window.addEventListener('DOMContentLoaded', initChat);
+  </script>
+</body>
+</html>
