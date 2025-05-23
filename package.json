@@ -10,5 +10,41 @@
   },
   "scripts": {
     "start": "node backend/server.js"
+  },
+  "name": "metaverse-room",
+  "version": "1.0.0",
+  "description": "A simple metaverse room application",
+  "main": "backend/server.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/metaverse-room.git"
+  },
+  "keywords": [
+    "metaverse",
+    "room",
+    "application"
+  ],
+  "author": "Your Name",
+  "license": "ISC",
+  "homepage": "https://github.com/yourusername/metaverse-room#readme",
+  "bugs": {
+    "url": "https://github.com/yourusername/metaverse-room/issues"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "nodemonConfig": {
+    "watch": [
+      "backend/"
+    ],
+    "ext": "js,json",
+    "ignore": [
+      "frontend/"
+    ]
   }
 }
