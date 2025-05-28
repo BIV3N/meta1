@@ -32,49 +32,11 @@
       border: 2px solid #fff;
       box-sizing: border-box;
     }
-    /* Chat styles */
-    #chat-container {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      width: 320px;
-      z-index: 20;
-      background: rgba(255, 255, 255, 0.92);
-      border-radius: 8px;
-      box-shadow: 0 2px 8px #0002;
-      padding: 10px;
-    }
-    #chat-messages {
-      height: 160px;
-      overflow-y: auto;
-      font-size: 15px;
-      margin-bottom: 8px;
-    }
-    #chat-input {
-      width: 75%;
-      padding: 6px;
-      border-radius: 4px;
-      border: 1px solid #bbb;
-    }
-    #chat-send {
-      width: 20%;
-      padding: 6px 0;
-      margin-left: 4px;
-      border-radius: 4px;
-      background: #1976d2;
-      color: #fff;
-      border: none;
-    }
   </style>
 </head>
 <body>
   <div id="description"></div>
   <div id="crosshair"></div>
-  <div id="chat-container">
-    <div id="chat-messages"></div>
-    <input id="chat-input" type="text" maxlength="200" placeholder="Введіть повідомлення...">
-    <button id="chat-send">Надіслати</button>
-  </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three/examples/jsm/libs/fontloader.js"></script>
@@ -189,19 +151,18 @@
           const loader = new THREE.GLTFLoader();
           loader.load(obj.url, (gltf) => {
             const mesh = gltf.scene;
-            mesh.position.set(x, y + pillarHeight + 10, z); // вище пілара на 6 одиниць більше
-            if (obj.url && obj.url.match(/GTR\+35\.glb$/i)) {
-              mesh.scale.set(1.2, 1.2, 1.2); // Дуже великий масштаб для машини
-            } else if (obj.url && obj.url.match(/Eye\.glb$/i)) {
-              mesh.scale.set(24, 24, 24); // Дуже великий масштаб для ока (20 разів більше)
-              console.log('Eye object loaded:', obj);
-            } else if (obj.url && obj.url.match(/Fox\.glb$/i)) {
+            mesh.position.set(x, y + pillarHeight + 10, z); 
+            if (obj.url && obj.url.match(/Ноутбук\.glb$/i)) {
+              mesh.scale.set(7, 7, 7); // ще більший масштаб для ноутбука
+            } else if (obj.url && obj.url.match(/Відеокарта\.glb$/i)) {
+              mesh.scale.set(24, 24, 24); // масштаб для відеокарти
+            } else if (obj.url && obj.url.match(/Лисиця\.glb$/i)) {
               mesh.scale.set(0.03, 0.03, 0.03); // Стандартний масштаб для лисиці
             } else {
-              mesh.scale.set(0.03, 0.03, 0.03); // Стандартний масштаб для інших
+              mesh.scale.set(0.03, 0.03, 0.03); 
             }
 
-            // Додаємо опис та збільшуємо область взаємодії
+            // Додаємо опис та значно збільшуємо область взаємодії
             mesh.traverse((child) => {
               if (child.isMesh) {
                 child.userData = {
@@ -210,27 +171,13 @@
                 };
                 child.geometry.computeBoundingBox();
                 const boundingBox = child.geometry.boundingBox;
-                const interactionScale = 6; // Дуже велика область взаємодії
+                const interactionScale = 30; // Дуже велика область взаємодії
                 boundingBox.expandByScalar(interactionScale);
               }
             });
 
             scene.add(mesh);
             loadedObjects.push(mesh);
-
-            // Додаємо червоний кубик-підказку біля кожного об'єкта
-            const cubeSize = 2;
-            const cubeOffset = 5; // Відстань від центру об'єкта
-            const infoCubeGeometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
-            const infoCubeMaterial = new THREE.MeshStandardMaterial({ color: 0xff2222 });
-            const infoCube = new THREE.Mesh(infoCubeGeometry, infoCubeMaterial);
-            infoCube.position.set(x + cubeOffset, y + pillarHeight + 10, z);
-            infoCube.userData = {
-              description: obj.description || 'Обʼєкт без опису',
-              type: obj.type || 'Невідомий тип',
-            };
-            scene.add(infoCube);
-            loadedObjects.push(infoCube);
           }, undefined, (err) => {
             console.error(`Помилка завантаження моделі ${obj.name}:`, err);
           });
@@ -633,44 +580,8 @@
     // --- Чат через WebSocket (працюючий, з іменем) ---
     let ws;
     let playerName = localStorage.getItem('playerName') || ('Гість_' + Math.floor(Math.random()*1000));
-    function initChat() {
-      const chatMessages = document.getElementById('chat-messages');
-      const chatInput = document.getElementById('chat-input');
-      const chatSend = document.getElementById('chat-send');
-      // Підключення до WebSocket-сервера
-      ws = new WebSocket('ws://' + window.location.hostname + (window.location.port ? ':'+window.location.port : '') );
-      ws.onopen = () => {
-        chatMessages.innerHTML += '<div style="color:#888">Підключено до чату</div>';
-      };
-      ws.onmessage = (msg) => {
-        try {
-          const data = JSON.parse(msg.data);
-          if (data.type === 'players') {
-            players = data.players;
-            updateOtherPlayers();
-          } else if (data.type === 'chat') {
-            chatMessages.innerHTML += `<div><b>${data.name}:</b> ${data.text}</div>`;
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-          }
-        } catch (e) {
-          chatMessages.innerHTML += `<div>${msg.data}</div>`;
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-      };
-      ws.onclose = () => {
-        chatMessages.innerHTML += '<div style="color:#888">Зʼєднання з чатом втрачено</div>';
-      };
-      chatSend.onclick = sendMsg;
-      chatInput.onkeydown = (e) => { if (e.key === 'Enter') sendMsg(); };
-      function sendMsg() {
-        const text = chatInput.value.trim();
-        if (text && ws && ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'chat', name: playerName, text }));
-          chatInput.value = '';
-        }
-      }
-    }
-    window.addEventListener('DOMContentLoaded', initChat);
+
+    // --- Прибрано блок чату та весь код WebSocket-чату ---
 
     // --- МУЛЬТИПЛЕЄР: синхронізація гравців через WebSocket ---
     let playerId = Math.random().toString(36).substr(2, 9); // простий унікальний id
@@ -714,23 +625,7 @@
     // Додаємо відправку позиції раз на 100мс
     setInterval(sendPlayerPosition, 100);
 
-    // ...у ws.onmessage:
-    ws.onmessage = (msg) => {
-      try {
-        const data = JSON.parse(msg.data);
-        if (data.type === 'players') {
-          players = data.players;
-          updateOtherPlayers();
-        } else if (typeof data === 'string') {
-          chatMessages.innerHTML += `<div>${data}</div>`;
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-      } catch (e) {
-        // старий формат чату
-        chatMessages.innerHTML += `<div>${msg.data}</div>`;
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-      }
-    };
+  
   </script>
 </body>
 </html>
